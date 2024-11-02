@@ -29,7 +29,8 @@ config = {
         'matching_ignore':    0,    # Ignore additional matches X seconds after the last one.
 
         'output_title':       None, # Set a title to create ".meta" file, and "X-chapters.mp3"
-
+        'output_split':       False, #Set true to spliting to files
+        'debug':              1,# set 0 print info set 1 print debug
     }
 
 if len(sys.argv) >= 2:
@@ -156,8 +157,8 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
     block_end = min(block_start + n_columns, config['source_frame_end'])
 
     set_data = abs((scipy.fft.fft(fft_window * source_frames[:, block_start:block_end], axis=0)).astype(dtype))
-
-    print('  {} to {} - {}'.format(block_start, block_end, str(datetime.timedelta(seconds=((float(block_start) * hop_length) / sample_rate)))))
+    if config['debug'] == 1:
+        print('  {} to {} - {}'.format(block_start, block_end, str(datetime.timedelta(seconds=((float(block_start) * hop_length) / sample_rate)))))
 
     x = 0
     x_max = (block_end - block_start)
@@ -165,7 +166,8 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
 
         if match_skipping > 0:
             if x == 0:
-                print('    Skipping {}'.format(match_skipping))
+                if config['debug'] == 1:
+                    print('    Skipping {}'.format(match_skipping))
             match_skipping -= 1
             x += 1
             continue
@@ -210,8 +212,8 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
                 if sample_x >= samples[sample_id][1]:
 
                     match_start_time = ((float(x + block_start - samples[sample_id][1]) * hop_length) / sample_rate)
-
-                    print('    Match {}/{}: Complete at {} @ {}'.format(matching_id, sample_id, sample_x, match_start_time))
+                    if config['debug'] == 1:
+                        print('    Match {}/{}: Complete at {} @ {}'.format(matching_id, sample_id, sample_x, match_start_time))
 
                     results_end[sample_id][sample_x] += 1
 
@@ -225,7 +227,8 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
 
                     if config['matching_skip']:
                         match_skipping = ((config['matching_skip'] * sample_rate) / hop_length)
-                        print('    Skipping {}'.format(match_skipping))
+                        if config['debug'] == 1:
+                            print('    Skipping {}'.format(match_skipping))
                         matching = {}
                         break # No more 'matching' entires
                     else:
@@ -233,18 +236,18 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
                         matching_complete.append(sample_id)
 
                 else:
-
-                    print('    Match {}/{}: Update to {} ({} < {})'.format(matching_id, sample_id, sample_x, hz_score, config['matching_min_score']))
+                    if config['debug'] == 1:
+                        print('    Match {}/{}: Update to {} ({} < {})'.format(matching_id, sample_id, sample_x, hz_score, config['matching_min_score']))
                     matching[matching_id][1] = sample_x
 
             elif matching[matching_id][2] < sample_warn_allowance and sample_x > 10:
-
-                print('    Match {}/{}: Warned at {} of {} ({} > {})'.format(matching_id, sample_id, sample_x, samples[sample_id][1], hz_score, config['matching_min_score']))
+                if config['debug'] == 1:
+                    print('    Match {}/{}: Warned at {} of {} ({} > {})'.format(matching_id, sample_id, sample_x, samples[sample_id][1], hz_score, config['matching_min_score']))
                 matching[matching_id][2] += 1
 
             else:
-
-                print('    Match {}/{}: Failed at {} of {} ({} > {})'.format(matching_id, sample_id, sample_x, samples[sample_id][1], hz_score, config['matching_min_score']))
+                if config['debug'] == 1:
+                    print('    Match {}/{}: Failed at {} of {} ({} > {})'.format(matching_id, sample_id, sample_x, samples[sample_id][1], hz_score, config['matching_min_score']))
                 results_end[sample_id][sample_x] += 1
                 del matching[matching_id]
 
@@ -256,7 +259,8 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
                 if match_any_sample or matching[matching_id][0] == matching_sample_id:
                     sample_id = matching[matching_id][0]
                     sample_x = matching[matching_id][1]
-                    print('    Match {}/{}: Duplicate Complete at {}'.format(matching_id, sample_id, sample_x))
+                    if config['debug'] == 1:
+                        print('    Match {}/{}: Duplicate Complete at {}'.format(matching_id, sample_id, sample_x))
                     results_dupe[sample_id][sample_x] += 1
                     del matching[matching_id] # Cannot be done in the first loop (next to continue), as the order in a dictionary is undefined, so you could have a match that started later, getting tested first.
 
@@ -272,7 +276,8 @@ for block_start in range(config['source_frame_start'], config['source_frame_end'
             if hz_score < config['matching_min_score']:
 
                 match_count += 1
-                print('    Match {}: Start for sample {} at {} ({} < {})'.format(match_count, sample_id, (x + block_start), hz_score, config['matching_min_score']))
+                if config['debug'] == 1:
+                    print('    Match {}: Start for sample {} at {} ({} < {})'.format(match_count, sample_id, (x + block_start), hz_score, config['matching_min_score']))
                 matching[match_count] = [
                         sample_id,
                         sample_start,
@@ -288,7 +293,7 @@ print('Matches')
 for match in matches:
     print(' {} = {} @ {}{}'.format(samples[match[0]][2], str(datetime.timedelta(seconds=match[1])), match[1], (' - Ignored' if match[2] else '')))
 
-if config['output_title'] != None:
+if config['output_title'] != None and not config['output_split']:
 
     source_path_split = os.path.splitext(config['source_path'])
     meta_path = source_path_split[0] + '.meta'
@@ -353,8 +358,21 @@ if config['output_title'] != None:
     devnull = open(os.devnull)
     proc = subprocess.Popen([config['ffmpeg_path'], '-i', config['source_path'], '-i', meta_path, '-map_metadata', '1', '-codec', 'copy', '-y', chapter_path], stdin=devnull, stdout=devnull, stderr=devnull)
     devnull.close()
-
+if config['output_title'] != None and config['output_split']:
+    last_time = 0
+    duration = 0
+    numbering = 1
+    source_path_split = os.path.splitext(config['source_path'])
+    devnull = open(os.devnull)
+    for match in matches:
+        chapteraudio_path = source_path_split[0] + '-ListenAct' + str(numbering) + source_path_split[1]
+        duration = round(match[1]) - last_time
+        print(f'Audio file: {chapteraudio_path}; Timestamp in Source: {str(datetime.timedelta(seconds=match[1]))} ; Duration in seconds: {duration}')
+        proc = subprocess.Popen([config['ffmpeg_path'], '-i', config['source_path'],'-ss',str(last_time),'-t',str(duration),'-c','copy','-y',chapteraudio_path], stdin=devnull, stdout=devnull, stderr=devnull)
+        last_time = round(match[1])
+        numbering += 1
+    devnull.close()
 #--------------------------------------------------
 
 print('')
-print(datetime.datetime.now() - start_time)
+print(f'Processing time: {datetime.datetime.now() - start_time}')

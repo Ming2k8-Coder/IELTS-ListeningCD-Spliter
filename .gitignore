@@ -1,1 +1,3 @@
 /.venv/*
+/.working/source
+/.working/event
